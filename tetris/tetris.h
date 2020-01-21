@@ -18,9 +18,11 @@
 #define BLOCK_HEIGHT	4
 #define BLOCK_WIDTH	4
 #define BLOCK_NUM	3
+#define VISIBLE_BLOCKS (1+2)
 
 // menu number
 #define MENU_PLAY '1'
+#define MENU_RECO '3'
 #define MENU_RANK '2'
 #define MENU_EXIT '4'
 
@@ -28,8 +30,6 @@
 #define NAMELEN 16
 
 #define CHILDREN_MAX 36
-
-#define VISIBLE_BLOCKS (1+2)
 
 typedef struct _Node* node_pointer;
 typedef struct _Node {
@@ -44,6 +44,7 @@ typedef struct _RecNode{
 	int lv,score;
 	char (*f)[WIDTH];
 	struct _RecNode *c[CHILDREN_MAX];
+	int recBlockX, recBlockY, recBlockRotate;
 } RecNode;
 
 /* [blockShapeID][# of rotate][][]*/
@@ -154,6 +155,7 @@ int blockRotate,blockY,blockX;	/* 현재 블럭의 회전, 블럭의 Y 좌표, �
 int score;			/* 점수가 저장*/
 int gameOver=0;			/* 게임이 종료되면 1로 setting된다.*/
 int timed_out;
+int recommend_flag;
 int recommendR,recommendY,recommendX; // 추천 블럭 배치 정보. 차례대로 회전, Y 좌표, X 좌표
 RecNode *recRoot;
 
@@ -362,6 +364,8 @@ int recommend(RecNode *root);
  *	input	: none
  *	return	: none
  ***********************************************************/
+int modified_recommend(RecNode *root);
+
 void recommendedPlay();
 
 void constructRecTree(RecNode *root);
@@ -374,4 +378,5 @@ void DrawRecommend();
 
 int calculScore(int lv, char f[HEIGHT][WIDTH], int r, int y, int x);
 
+long evalSize(RecNode *root);
 #endif

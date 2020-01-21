@@ -4,6 +4,7 @@ static struct sigaction act, oact;
 
 int main(){
 	int exit=0;
+	recommend_flag=0;
 	createRankList();
 	initscr();
 	noecho();
@@ -21,6 +22,7 @@ int main(){
 		switch(menu()){
 		case MENU_PLAY: play(); break;
 		case MENU_RANK:	rank(); break;
+		case MENU_RECO: recommendedPlay(); break;
 		case MENU_EXIT: exit=1; break;
 		default: break;
 		}
@@ -49,7 +51,7 @@ void InitTetris(){
 	gameOver=0;
 	timed_out=0;
 
-	recommend(recRoot);
+	modified_recommend(recRoot);
 	DrawOutline();
 	DrawField();
 	DrawBlockWithFeatures(blockY,blockX,nextBlock[0],blockRotate);
@@ -96,6 +98,9 @@ int GetCommand(){
 	default:
 		command = NOTHING;
 		break;
+	}
+	if(command!=QUIT && recommend_flag==1){
+		command = KEY_DOWN;
 	}
 	return command;
 }
@@ -223,7 +228,9 @@ void play(){
 			printw("Good-bye!!");
 			refresh();
 			getch();
-
+			if(!recommend_flag){
+				newRank(score);
+			}
 			return;
 		}
 	}while(!gameOver);
@@ -235,7 +242,9 @@ void play(){
 	printw("GameOver!!");
 	refresh();
 	getch();
-	newRank(score);
+	if(!recommend_flag){
+		newRank(score);
+	}
 }
 
 char menu(){
@@ -300,6 +309,13 @@ void DrawChange(char f[HEIGHT][WIDTH],int command,int currentBlock,int blockRota
 
 void BlockDown(int sig){
 	int touched;
+
+	if(recommend_flag){
+		blockX = recommendX;
+		blockY = recommendY;
+		blockRotate = recommendR;
+	}
+
 	if(CheckToMove(field,nextBlock[0],blockRotate,blockY+1,blockX)==1){
 		blockY++;
 		DrawChange(field, KEY_DOWN, nextBlock[0], blockRotate, blockY, blockX);
@@ -313,7 +329,7 @@ void BlockDown(int sig){
 		nextBlock[0] = nextBlock[1];
 		nextBlock[1] = nextBlock[2];
 		nextBlock[2] = rand()%7;
-		recommend(recRoot);
+		modified_recommend(recRoot);
 		DrawNextBlock(nextBlock);
 		blockRotate=0;
 		blockY=-1;
@@ -381,7 +397,8 @@ void DrawShadow(int y, int x, int blockID,int blockRotate){
 void DrawBlockWithFeatures(int y, int x, int blockID, int blockRotate){
 	DrawRecommend();
 	DrawBlock(y, x, blockID, blockRotate,' ');
-	DrawShadow(y, x, blockID, blockRotate);
+	if(!recommend_flag)
+		DrawShadow(y, x, blockID, blockRotate);
 }
 
 void createRankList(){
@@ -428,6 +445,9 @@ void rank(){
 	
 	switch(wgetch(stdscr)){
 	case '1':
+		from = 0;
+		to = len;
+
 		echo();
 		printw("X: ");
 		scanw("%d", &from);
@@ -436,10 +456,7 @@ void rank(){
 		noecho();
 		printw("       name       |   score   \n");
 		printw("------------------------------\n");
-		
-		if(from==NULL) from = 0;
-		if(to==NULL) to = len;
-		
+
 		if(from>to){
 			printw("\nsearch failure: no rank in the list\n");
 			break;
@@ -512,7 +529,7 @@ void rank(){
 void writeRankFile(){
 	node_pointer cur, temp;
 	FILE* fw;
-	fw = fopen("rank.txt", "w");
+	if((fw = fopen("rank.txt", "w"))==NULL) return;
 	fprintf(fw, "%d\n", len);
 
 	cur=first; 
@@ -611,8 +628,83 @@ int calculScore(int lv, char f[HEIGHT][WIDTH], int r, int y, int x){
 int recommend(RecNode *root){
 	int r,x,y,rBoundary, lBoundary;
 	int h,w;
-	int eval;
+	int cur;
 	int max=0;//최고점수
+	int maxR, maxY, maxX;
+	int recommended = 0;
+	int i=0;
+	int lv=root->lv+1;
+	RecNode **c=root->c;
+	
+	//Boundary 구하기
+	for(r=0; r<NUM_OF_ROTATE; ++r){
+		lBoundary = 3;
+		rBoundary = 0;
+		for(h=0;h<BLOCK_HEIGHT;++h){
+			for(w=0;w<BLOCK_WIDTH;++w){
+				if(block[nextBlock[lv]][r][h][w]) break;
+			}
+			if(w<lBoundary) lBoundary=w;
+		}	
+		for(h=0;h<BLOCK_HEIGHT;++h){
+			for(w=BLOCK_WIDTH-1;w>=0;--w){
+				if(block[nextBlock[lv]][r][h][w]) break;
+			}
+			if(w>rBoundary) rBoundary=w;
+
+		}
+		lBoundary=0-lBoundary;
+		rBoundary=WIDTH-1-rBoundary;
+		
+		for(x=lBoundary;x<=rBoundary;x++,i++){
+			//이전 레벨의 field 복원
+			for(h=0;h<HEIGHT;h++){
+				for(w=0;w<WIDTH;w++){
+					c[i]->f[h][w]=root->f[h][w];
+				}
+			}
+
+
+			//떨어질 수 있는 y 구하기
+			y=0;
+			if(CheckToMove(c[i]->f,nextBlock[lv],r,y,x)){
+				while(CheckToMove(c[i]->f,nextBlock[lv],r,y+1,x)){
+					y++;
+				}
+			}	
+			else continue;
+
+			//점수 계산
+			c[i]->score=root->score+calculScore(lv,c[i]->f,r,y,x);
+	
+			if(lv<VISIBLE_BLOCKS-1)
+				cur=recommend(c[i]);
+			else
+				cur=c[i]->score;
+		
+			if(max<cur){
+				maxR=r;
+				maxY=y;
+				maxX=x;
+				max=cur;
+				recommended=1;
+			}
+		}
+	}
+	
+	if(lv==0 && (recommended==1)){
+		recommendR=maxR;
+		recommendY=maxY;
+		recommendX=maxX;
+	}
+	return max;
+}
+
+int modified_recommend(RecNode *root){
+	int r,x,y,rBoundary, lBoundary;
+	int h,w;
+	int eval=0, score=0;
+	int max=0, maxScore=0;
 	int maxR, maxY, maxX;
 	int recommended = 0;
 	int i=0;
@@ -660,24 +752,43 @@ int recommend(RecNode *root){
 				}
 			}	
 			else continue;
-
+			
 			//점수 계산
-			c[i]->score=root->score+calculScore(lv,c[i]->f,r,y,x);
-	
-			if(lv<VISIBLE_BLOCKS-1)
-				eval=recommend(c[i]);
-			else
+			score=root->score+calculScore(lv,c[i]->f,r,y,x);
+			c[i]->score=score;
+			if(lv==0){
+				c[i]->recBlockX = x;
+				c[i]->recBlockY = y;
+				c[i]->recBlockRotate = r;
+			}
+			else{
+				c[i]->recBlockX = root->recBlockX;
+				c[i]->recBlockY = root->recBlockY;
+				c[i]->recBlockRotate = root->recBlockRotate;
+			}
+			if(maxScore<score)
+				maxScore=score;
+		}
+	}
+	for(i=0;i<CHILDREN_MAX;i++){
+		if(c[i]->score == maxScore){
+			if(lv<VISIBLE_BLOCKS-1){
+				eval=modified_recommend(c[i]);
+			}
+			else{
 				eval=c[i]->score;
-		
+			}
+			eval = eval + c[i]->recBlockY*10;
 			if(max<eval){
 				recommended=1;
 				max=eval;
-				maxR=r;
-				maxY=y;
-				maxX=x;
+				maxR = c[i]->recBlockRotate;
+				maxY = c[i]->recBlockY;
+				maxX = c[i]->recBlockX;
 			}
 		}
 	}
+
 	
 	if(lv==0 && recommended){
 		recommendR=maxR;
@@ -685,8 +796,38 @@ int recommend(RecNode *root){
 		recommendX=maxX;
 	}
 	return max;
+
+}
+void recommendedPlay(){
+	time_t start, stop;
+	double duration;
+	start = time(NULL);
+	recommend_flag=1;
+	play();
+	stop = time(NULL);
+	duration = (double)difftime(stop, start);
+	recommend_flag=0;
+	clear();
+	printw("time(t):%f\n",duration);
+	printw("score(t):%d\n",score);
+	printw("space(t):%d\n",evalSize(recRoot));
+	printw("score(t)/time(t):%f\n",(double)score/duration);
+	printw("score(t)/space(t):%f\n",(double)score/evalSize(recRoot));
+	getch();
 }
 
-void recommendedPlay(){
-	// user code
+
+long evalSize(RecNode *root){
+	int i, sum;
+	RecNode **c=root->c;
+	sum = sizeof(RecNode);
+	for(i=0;i<CHILDREN_MAX;i++){
+		if(c[i]->lv==VISIBLE_BLOCKS-1){
+			sum += sizeof(RecNode);
+		}
+		else
+			sum += evalSize(c[i]);
+	}
+	return sum;
 }
+
